@@ -1,0 +1,30 @@
+﻿NETICMP6 Anbieter
+==================
+
+Rolle: net.icmpv6. ICMPv6 and IPv6 pseudoheader wire codec.
+
+Besitz und Operationsvertrag
+---------------------------
+
+Der normative Plattformvertrag liegt im R4OS-Workspace unter
+Repositories/Contract/API/Ipv6Providers.txt. module.R4MF ist die Wahrheit
+fuer Version, SDK-Profil, Imports, Abhaengigkeiten und Imageziel. Der
+gepinnte SDK-Stand liefert ausschliesslich den ausgewaehlten Plattformvertrag.
+
+Dieser zustandslose Anbieter besitzt IPv6-Pseudoheaderpruefsummen und
+ICMPv6-Parse/Seal/EchoReply/Error. Grenzen, ganze ungerade Byteenden und
+Error-to-Error-Regeln werden vor Ausgabe validiert. Eingang maximal1504,
+erzeugte ICMPv6-Nachricht maximal1240 Bytes; Pointer und Quote sind exakt.
+Es gibt hier keinen NIC-, Routen-, Nachbar- oder Socketbesitz.
+
+Build und Qualifikation
+-----------------------
+
+Linux: ./Build.sh beziehungsweise ./Build.sh test. Windows: Build.bat
+beziehungsweise Build.bat test. Die Komponententests pruefen reine Besitzer-
+und Wirefaelle. Kontrollierter Gast/Peer und reale NIC-/IRQ-/DMAeigenschaften
+brauchen eigene Belege; ein Hosttest beweist keine Hardwarefaehigkeit.
+
+Die TCP-/UDP-/DNS-Endpunktfaehigkeit folgt nicht aus diesen Paket-/
+Codecoperationen. Anwendungen, bestehende Imports und Bedienablaeufe
+werden durch diesen Anbieter nicht migriert.
