@@ -1,29 +1,31 @@
 //! Bounded ICMPv6 wire primitives. Address selection, routing, ND state and
 //! error rate policy belong to their respective external protocol owners.
 const std = @import("std");
+const cursor = @import("r4os").binary_cursor;
+const Checksum16 = @import("r4os").internet_checksum.Checksum16;
 pub const Address = [16]u8;
 pub const max_message = 1504;
 pub const max_sent_message = 1240; // IPv6 minimum MTU1280 minus its40byte header.
 pub const Error = error{ Short, Capacity, Checksum, Malformed, NoReply };
 pub const View = struct { kind: u8, code: u8, bytes: []const u8 };
 
-fn add(sum: *u32, bytes: []const u8) void {
-    var i: usize = 0;
-    while (i + 1 < bytes.len) : (i += 2) sum.* += (@as(u32, bytes[i]) << 8) | bytes[i + 1];
-    if (i < bytes.len) sum.* += @as(u32, bytes[i]) << 8;
-}
 /// This same pure pseudoheader primitive can serve other upper layers;
 /// its existence does not advertise any TCP/UDP transport capability.
 pub fn checksumNext(source: Address, destination: Address, next: u8, bytes: []const u8) u16 {
     std.debug.assert(bytes.len <= max_message);
-    var sum: u32 = 0;
-    add(&sum, &source);
-    add(&sum, &destination);
-    const length: u32 = @intCast(bytes.len);
-    sum += (length >> 16) + (length & 0xffff) + next;
-    add(&sum, bytes);
-    while (sum >> 16 != 0) sum = (sum & 0xffff) + (sum >> 16);
-    return @truncate(~sum);
+    // The protocol retains IPv6 pseudoheader composition and the raw zero
+    // result. The shared streaming sum supplies carries and odd-byte handling.
+    var header: [8]u8 = @splat(0);
+    var writer = cursor.Writer.init(&header) catch unreachable;
+    writer.writeInt(u32, @intCast(bytes.len), .big) catch unreachable;
+    writer.position = 7;
+    writer.writeInt(u8, next, .big) catch unreachable;
+    var sum: Checksum16 = .{};
+    sum.add(&source) catch unreachable;
+    sum.add(&destination) catch unreachable;
+    sum.add(&header) catch unreachable;
+    sum.add(bytes) catch unreachable;
+    return sum.finish() catch unreachable;
 }
 pub fn checksum(source: Address, destination: Address, bytes: []const u8) u16 {
     return checksumNext(source, destination, 58, bytes);
@@ -106,7 +108,8 @@ pub fn errorMessage(kind: u8, code: u8, word: u32, source: Address, destination:
     var private: [max_sent_message]u8 = .{0} ** max_sent_message;
     private[0] = kind;
     private[1] = code;
-    std.mem.writeInt(u32, private[4..8], word, .big);
+    var writer = cursor.Writer.init(private[4..8]) catch unreachable;
+    writer.writeInt(u32, word, .big) catch unreachable;
     @memcpy(private[8..][0..count], quoted[0..count]);
     try seal(source, destination, 58, private[0 .. count + 8]);
     @memcpy(out[0 .. count + 8], private[0 .. count + 8]);

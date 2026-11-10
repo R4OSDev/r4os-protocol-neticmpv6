@@ -1,6 +1,7 @@
 const std = @import("std");
 const sdk = @import("r4os");
 const a = sdk.abi;
+const native = sdk.native_protocol_view;
 const wire = @import("wire.zig");
 
 comptime {
@@ -33,7 +34,10 @@ export fn icmp6_dispatch(op: u32, input: *const a.ProtocolBuffer, output: *a.Pro
     if (input.flags != 0 or input.reserved != 0 or input.len > input.capacity or output.flags != 0 or output.reserved != 0) return a.network_error_invalid;
     if (input.data == null or input.len != @sizeOf(a.Icmpv6Message) or output.data == null or output.capacity < @sizeOf(a.Icmpv6Message)) return a.network_error_invalid;
     var request: a.Icmpv6Message = undefined;
-    const raw: [*]const u8 = @ptrCast(input.data.?);
+    var input_policy = native.Policy.versioned(a.Icmpv6Message, 1, .input, .exact);
+    input_policy.alignment = 1; // copied byte transport, no unaligned native cast
+    const input_address = native.admit(input, input_policy, .input) catch return a.network_error_invalid;
+    const raw: [*]const u8 = @ptrFromInt(input_address);
     @memcpy(std.mem.asBytes(&request), raw[0..@sizeOf(a.Icmpv6Message)]);
     if (request.version != 1 or request.size != @sizeOf(a.Icmpv6Message) or request.bytes > wire.max_message or request.checksum != 0 or !std.mem.allEqual(u8, request.payload[request.bytes..], 0)) return a.network_error_invalid;
     if (request.next_header > 255 or (op != a.icmpv6_op_checksum and request.next_header != 58)) return a.network_error_unsupported_policy;
@@ -67,8 +71,11 @@ export fn icmp6_dispatch(op: u32, input: *const a.ProtocolBuffer, output: *a.Pro
         else => return a.network_error_unsupported_policy,
     }
     @memset(result.payload[result.bytes..], 0);
-    const destination: [*]u8 = @ptrCast(output.data.?);
+    var output_policy = native.Policy.versioned(a.Icmpv6Message, 1, .output, .exact);
+    output_policy.alignment = 1;
+    const output_address = native.admit(output, output_policy, .output) catch return a.network_error_invalid;
+    const destination: [*]u8 = @ptrFromInt(output_address);
     @memcpy(destination[0..@sizeOf(a.Icmpv6Message)], std.mem.asBytes(&result));
-    output.len = @sizeOf(a.Icmpv6Message);
+    native.publish(output, output_policy, @sizeOf(a.Icmpv6Message)) catch return a.network_error_invalid;
     return 0;
 }
